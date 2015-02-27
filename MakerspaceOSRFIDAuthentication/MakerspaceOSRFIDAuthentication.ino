@@ -59,7 +59,7 @@ IPAddress ip(10,0,0,3);
 MFRC522 mfrc522(RFID_SS_pin, RFID_RST_pin);  
 
 //Settings-- Adjust as needed.  
-
+const String EQUIPMENTID = "1212";
 #define USELED
 //#define USEPINPAD  //Comment out if a pinpad is not being used
 #define USELCD   // Comment out if not using LCD
@@ -203,7 +203,7 @@ void loop()
 {
       int gotCard = 0;
       String serial;
-      String pin;
+      String pin ="";
       // Disable ethernet
       digitalWrite(ETH_SS_pin, HIGH);
       // Enable RFID
@@ -243,6 +243,8 @@ void loop()
                 }
               }
             }
+          #else
+            pin = "~";  
           #endif
           #ifdef DEBUG
             Serial.println("Card Read...");
@@ -263,8 +265,11 @@ void loop()
            lcdSerial.write("Starting Card Validation..");
          #endif
          
+         #ifdef DEBUG
+           Serial.println("/MakerSpaceOS.Services/EquipmentAccessControl.svc/CheckEquipmentAccess/" + EQUIPMENTID +"/" + serial + "/" + pin);
+         #endif
          client.connect(server, 80);
-         client.println("GET /MakerSpaceOS.Services/Access.svc/CheckAccess/" + serial + "/" + pin);
+         client.println("GET /MakerSpaceOS.Services/EquipmentAccessControl.svc/CheckEquipmentAccess/" + EQUIPMENTID +"/" + serial + "/" + pin);
          client.println("Host: localhost");
          client.println("Connection: close");
          client.println();
@@ -311,6 +316,8 @@ void loop()
          const char* accessAllowed = root["AccessAllowed"] ;
          const char* username  =root["UserName"];
          const char* message  =root["Message"];
+         const int timelimit = root["TimeLimit"];
+         
          #ifdef DEBUG
            Serial.println(accessAllowed );
            Serial.println( username );
@@ -338,7 +345,19 @@ void loop()
                  delay(1000);
                  ClearScreen();
                #endif
-               digitalWrite(RELAY1,HIGH); 
+               
+               
+               digitalWrite(RELAY1,HIGH);
+              
+               if(timelimit != 0)
+               {
+                 #ifdef DEBUG
+                   Serial.println(timelimit);
+                 #endif
+                 //Need to add a countdown timer here so that time counts down the time remaining and outputs to the LCD
+                 delay(timelimit * 60000);
+                 digitalWrite(RELAY1,LOW); //Turn off time limit expires.  Need to add the current check and other logic here.  Very basic rightnow.  Delay is not 
+               }
                
            }
            else{
@@ -351,6 +370,7 @@ void loop()
                #ifdef USELCD
                   ClearScreen();
                   lcdSerial.write("Access Denied");
+                  lcdSerial.write(message);
                #endif
            }
         delay(2000);
