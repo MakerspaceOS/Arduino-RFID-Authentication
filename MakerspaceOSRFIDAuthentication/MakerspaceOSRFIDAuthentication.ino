@@ -31,6 +31,7 @@
 #include <ArduinoJson.h> //https://github.com/bblanchon/ArduinoJson
 #include <Keypad.h>  //http://playground.arduino.cc/Code/Keypad  If you have a Keypad attached.
 //#include <CountDownTimer.h> // http://playground.arduino.cc/Main/CountDownTimer Used for controlling how long a used has access to the equipment
+#include "AccessResponse.h"
 
 // Enter a MAC address for your controller below.
 // Newer Ethernet shields have a MAC address printed on a sticker on the shield
@@ -60,6 +61,9 @@ MFRC522 mfrc522(RFID_SS_pin, RFID_RST_pin);
 
 //Settings-- Adjust as needed.  
 const String EQUIPMENTID = "1212";
+#define USEWEBAUTHENTICATE
+
+
 #define USELED
 //#define USEPINPAD  //Comment out if a pinpad is not being used
 #define USELCD   // Comment out if not using LCD
@@ -143,9 +147,7 @@ void setup()
   }    
   else
   {  
-      #ifdef USELCD //Only if we are using an LCD
-        ClearScreen();
-        String DHCP  = "";
+       String DHCP  = "";
         for (byte thisByte = 0; thisByte < 4; thisByte++) {
              // print the value of each byte of the IP address:
              DHCP = DHCP + String(Ethernet.localIP()[thisByte], DEC);
@@ -153,9 +155,14 @@ void setup()
          }
        char IP[DHCP.length()+1];
        DHCP.toCharArray(IP, DHCP.length()+1);
-       lcdSerial.write(IP);
-       delay(2000);
-     #endif
+      #ifdef USELCD //Only if we are using an LCD
+         ClearScreen();
+         lcdSerial.write(IP);
+         delay(2000);
+      #endif
+      #ifdef DEBUG
+        Serial.println(IP);
+      #endif
   }
   
    // give the Ethernet shield a second to initialize:
@@ -167,6 +174,10 @@ void setup()
    if (client.connect(server, 80)) {
      #ifdef DEBUG
        Serial.println("connected to server");
+     #endif
+     #ifdef USELCD
+       ClearScreen();
+       lcdSerial.write("connected to server");
      #endif
    } 
    else {
@@ -204,132 +215,71 @@ void loop()
       int gotCard = 0;
       String serial;
       String pin ="";
+      
       // Disable ethernet
       digitalWrite(ETH_SS_pin, HIGH);
       // Enable RFID
       digitalWrite(RFID_SS_pin, LOW);
 
       // See if RFID card present
-      if (mfrc522.PICC_IsNewCardPresent()) {
-        if (mfrc522.PICC_ReadCardSerial()) {
+      if (mfrc522.PICC_IsNewCardPresent()) 
+      {
+        if (mfrc522.PICC_ReadCardSerial()) 
+        {
           
           #ifdef USETONE
             tone(TONEPIN,200,500);
           #endif
           
           gotCard = 1;
-          for (byte i = 0; i < mfrc522.uid.size; i++) {
+          for (byte i = 0; i < mfrc522.uid.size; i++) 
+          {
                 serial += String(mfrc522.uid.uidByte[i], HEX);
                 #ifdef DEBUG
                   Serial.println(mfrc522.uid.uidByte[i], HEX);
                 #endif  
-        } 
-         #ifdef USELCD
-           ClearScreen();
-           lcdSerial.write("Enter Pin + #");
-         #endif
-         #ifdef USEPINPAD
-           char key;
-            while(key!='#')
-            {
-              key = keypad.getKey();
-              if (key){
-                if(key != '#')
-                {
-                pin = pin + key;
-                #ifdef DEBUG
-                  Serial.println(key);
+         
+         
+               #ifdef USEPINPAD
+                 #ifdef USELCD
+                   ClearScreen();
+                   lcdSerial.write("Enter Pin + #");
+                 #endif
+                 char key;
+                  while(key!='#')
+                  {
+                    key = keypad.getKey();
+                    if (key){
+                      if(key != '#')
+                      {
+                      pin = pin + key;
+                      #ifdef DEBUG
+                        Serial.println(key);
+                      #endif
+                      }
+                    }
+                  }
+                #else
+                  pin = "~";  
                 #endif
-                }
-              }
-            }
-          #else
-            pin = "~";  
-          #endif
-          #ifdef DEBUG
-            Serial.println("Card Read...");
-          #endif  
-      }
-      }
-     
-      // Stop and disable RFID
-      mfrc522.PICC_HaltA();
-      //Disable RFID
-      digitalWrite(RFID_SS_pin, HIGH);
-      // Enable Ethernet
-      digitalWrite(ETH_SS_pin, LOW);
-      
-      if (gotCard) {
-         #ifdef USELCD
-           ClearScreen();
-           lcdSerial.write("Starting Card Validation..");
-         #endif
-         
-         #ifdef DEBUG
-           Serial.println("/MakerSpaceOS.Services/EquipmentAccessControl.svc/CheckEquipmentAccess/" + EQUIPMENTID +"/" + serial + "/" + pin);
-         #endif
-         client.connect(server, 80);
-         client.println("GET /MakerSpaceOS.Services/EquipmentAccessControl.svc/CheckEquipmentAccess/" + EQUIPMENTID +"/" + serial + "/" + pin);
-         client.println("Host: localhost");
-         client.println("Connection: close");
-         client.println();
-         
-         String response = "";
-        
-         while(client.connected()) {
-         // read this packet
-          while(client.available()){
-            char c = client.read();
-            response= response + c;
-           }
-        }
-         #ifdef DEBUG
-          Serial.println(response);
-         #endif
-         
-         StaticJsonBuffer<200> jsonBuffer;
-         char charBuf[response.length()+1];
-         
-         response.toCharArray(charBuf, response.length()+1);
-            #ifdef DEBUG
-              Serial.println(charBuf);
-            #endif
-          JsonObject& root = jsonBuffer.parseObject(charBuf);
-
-          if (!root.success()) {
-             #ifdef DEBUG
-                Serial.println("parseObject() failed");
-             #endif
-             #ifdef USETONE
-                  tone(TONEPIN,100,1000);
-               #endif    
-             #ifdef USELCD
-               ClearScreen();
-               lcdSerial.write("Server Error Cannot Authenticate");
-               delay(2000);
-               ClearScreen();
-               lcdSerial.write("Please scan card");
-             #endif
-            return;
+                #ifdef DEBUG
+                  Serial.println("Card Read...");
+                #endif  
           }
-         
-         const char* accessAllowed = root["AccessAllowed"] ;
-         const char* username  =root["UserName"];
-         const char* message  =root["Message"];
-         const int timelimit = root["TimeLimit"];
-         
-         #ifdef DEBUG
-           Serial.println(accessAllowed );
-           Serial.println( username );
-         #endif
-         
-         client.stop();
-         #ifdef USELED
-           digitalWrite(YELLOW_LED, LOW);
-         #endif
-         
-         String str(accessAllowed);
-         if(str == "true"){
+      
+                // Stop and disable RFID
+          mfrc522.PICC_HaltA();
+          AccessResponse accessResponse;
+          
+          #ifdef USEWEBAUTHENTICATE
+            accessResponse = CheckAccessUsingService( serial, pin);
+          #endif
+          
+          #ifdef DEBUG
+            Serial.println(accessResponse.AccessAllowed);
+          #endif         
+          if(strcmp(accessResponse.AccessAllowed,"true")==0)
+          {
                #ifdef USELED
                  digitalWrite(GREEN_LED, HIGH);
                #endif
@@ -341,7 +291,7 @@ void loop()
                  lcdSerial.write("Access Granted");
                  lcdSerial.write(0x0A);
                  lcdSerial.write("Welcome ");
-                 lcdSerial.write(username);
+                 lcdSerial.write(accessResponse.Username);
                  delay(1000);
                  ClearScreen();
                #endif
@@ -349,13 +299,13 @@ void loop()
                
                digitalWrite(RELAY1,HIGH);
               
-               if(timelimit != 0)
+               if(accessResponse.TimeLimit != 0)
                {
                  #ifdef DEBUG
-                   Serial.println(timelimit);
+                   Serial.println(accessResponse.TimeLimit);
                  #endif
                  //Need to add a countdown timer here so that time counts down the time remaining and outputs to the LCD
-                 delay(timelimit * 60000);
+                 delay(accessResponse.TimeLimit * 60000);
                  digitalWrite(RELAY1,LOW); //Turn off time limit expires.  Need to add the current check and other logic here.  Very basic rightnow.  Delay is not 
                }
                
@@ -370,20 +320,21 @@ void loop()
                #ifdef USELCD
                   ClearScreen();
                   lcdSerial.write("Access Denied");
-                  lcdSerial.write(message);
+                  lcdSerial.write(accessResponse.ResponseMessage);
                #endif
            }
-        delay(2000);
-        #ifdef USELED
+           delay(2000);
+        }
+      }
+      #ifdef USELED
           digitalWrite(RED_LED, LOW);
           digitalWrite(GREEN_LED, LOW);
           digitalWrite(YELLOW_LED, HIGH);
-        #endif
-        #ifdef USELCD         
+      #endif
+      #ifdef USELCD         
            ClearScreen();
            lcdSerial.write("Please scan card");
-        #endif
-      }
+      #endif
 }
 
 void ClearScreen()
@@ -394,3 +345,68 @@ void ClearScreen()
   #endif
 }
 
+
+AccessResponse CheckAccessUsingService(String serial, String pin)
+{
+  #ifdef USEWEBAUTHENTICATE
+	// Enable ethernet
+	digitalWrite(ETH_SS_pin, LOW);
+	// Disable RFID
+        digitalWrite(RFID_SS_pin, HIGH);
+
+	#ifdef DEBUG
+		Serial.println("/MakerSpaceOS.Services/EquipmentAccessControl.svc/CheckEquipmentAccess/" + EQUIPMENTID + "/" + serial + "/" + pin);
+	#endif
+	client.connect(server, 80);
+	client.println("GET /MakerSpaceOS.Services/EquipmentAccessControl.svc/CheckEquipmentAccess/" + EQUIPMENTID + "/" + serial + "/" + pin);
+	client.println("Host: localhost");
+	client.println("Connection: close");
+	client.println();
+
+	String response = "";
+
+        while (client.connected()) 
+        {
+	  // read this packet
+	  while (client.available())
+          {
+	    char c = client.read();
+	    response = response + c;
+          }
+	}
+	#ifdef DEBUG
+		Serial.println(response);
+	#endif
+
+	StaticJsonBuffer<200> jsonBuffer;
+	char charBuf[response.length() + 1];
+
+	response.toCharArray(charBuf, response.length() + 1);
+	JsonObject& root = jsonBuffer.parseObject(charBuf);
+
+	//Enable RFID
+	digitalWrite(RFID_SS_pin, HIGH);
+	//Disable Ethernet
+        digitalWrite(ETH_SS_pin, LOW);
+
+	client.stop();
+	
+        if (!root.success()) 
+        {
+  	  #ifdef DEBUG
+	  	Serial.println("parseObject() failed");
+	  #endif
+
+	  AccessResponse accessResponse = AccessResponse();
+	  accessResponse.AccessAllowed = "false";
+	  accessResponse.ResponseMessage = "Server Error Cannot Authenticate";
+          return accessResponse;
+	}
+	AccessResponse accessResponse = AccessResponse();
+	accessResponse.AccessAllowed = root["AccessAllowed"];
+	accessResponse.Username = root["UserName"];
+	accessResponse.ResponseMessage = root["Message"];
+	accessResponse.TimeLimit = root["TimeLimit"];
+	return accessResponse;
+  #endif
+}
