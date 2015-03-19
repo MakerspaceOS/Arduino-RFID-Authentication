@@ -75,9 +75,9 @@ const String EQUIPMENTID = "1212";
 #endif
 
 #ifdef USELED
-  #define RED_LED 5 
-  #define GREEN_LED 4
-  #define YELLOW_LED A0
+  #define RED_LED A0 
+  #define GREEN_LED A2
+  #define YELLOW_LED A1
 #endif
 
 #ifdef CHECKCURRENT
@@ -95,8 +95,8 @@ const String EQUIPMENTID = "1212";
     {'7','8','9'},
     {'*','0','#'}
   };
-  byte rowPins[rows] = {A1, A0, A3, 0}; //connect to the row pinouts of the keypad
-  byte colPins[cols] = {3, A2, 9}; //connect to the column pinouts of the keypad
+  byte rowPins[rows] = {5, A0, A3, 0}; //connect to the row pinouts of the keypad
+  byte colPins[cols] = {3, 4, 9}; //connect to the column pinouts of the keypad
    //connect to the column pinouts of the keypad
   Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, rows, cols );
 #endif
@@ -113,6 +113,7 @@ void setup()
 {
   
   pinMode(RELAY1, OUTPUT); 
+  digitalWrite(RELAY1,HIGH);
   
   #ifdef DEBUG  //Only setup serial if in debug
     Serial.begin(9600);
@@ -201,7 +202,11 @@ void setup()
     pinMode(RED_LED, OUTPUT); 
     pinMode(GREEN_LED, OUTPUT); 
     pinMode(YELLOW_LED, OUTPUT);
-    digitalWrite(YELLOW_LED, HIGH); 
+    digitalWrite(YELLOW_LED, HIGH);
+   digitalWrite(GREEN_LED, HIGH);
+  digitalWrite(RED_LED, HIGH); 
+  delay(2000);
+  
   #endif
   #ifdef USELCD
     ClearScreen();
@@ -297,7 +302,7 @@ void loop()
                #endif
                
                
-               digitalWrite(RELAY1,HIGH);
+               digitalWrite(RELAY1,LOW);
               
                if(accessResponse.TimeLimit != 0)
                {
@@ -306,7 +311,7 @@ void loop()
                  #endif
                  //Need to add a countdown timer here so that time counts down the time remaining and outputs to the LCD
                  delay(accessResponse.TimeLimit * 60000);
-                 digitalWrite(RELAY1,LOW); //Turn off time limit expires.  Need to add the current check and other logic here.  Very basic rightnow.  Delay is not 
+                 digitalWrite(RELAY1,HIGH); //Turn off time limit expires.  Need to add the current check and other logic here.  Very basic rightnow.  Delay is not 
                }
                
            }
@@ -372,6 +377,7 @@ AccessResponse CheckAccessUsingService(String serial, String pin)
           {
 	    char c = client.read();
 	    response = response + c;
+            Serial.println(c);
           }
 	}
 	#ifdef DEBUG
@@ -380,7 +386,9 @@ AccessResponse CheckAccessUsingService(String serial, String pin)
 
 	StaticJsonBuffer<200> jsonBuffer;
 	char charBuf[response.length() + 1];
-
+#ifdef DEBUG
+		Serial.println(response);
+	#endif
 	response.toCharArray(charBuf, response.length() + 1);
 	JsonObject& root = jsonBuffer.parseObject(charBuf);
 
