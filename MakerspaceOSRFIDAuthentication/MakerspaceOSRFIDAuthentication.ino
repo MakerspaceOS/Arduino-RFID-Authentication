@@ -101,7 +101,13 @@ const String EQUIPMENTID = "1212";
   Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, rows, cols );
 #endif
 
+unsigned long Watch, _micro, time = micros();
+unsigned int Clock = 0, R_clock;
+boolean Reset = false, Stop = false, Paused = false;
+volatile boolean timeFlag = false;
+String storedSerial;
 
+      
 #ifdef USELCD
   // Attach the serial display's RX line to digital pin 2
   SoftwareSerial lcdSerial(3,2); 
@@ -203,20 +209,49 @@ void setup()
     pinMode(GREEN_LED, OUTPUT); 
     pinMode(YELLOW_LED, OUTPUT);
     digitalWrite(YELLOW_LED, HIGH);
-   digitalWrite(GREEN_LED, HIGH);
-  digitalWrite(RED_LED, HIGH); 
-  delay(2000);
-  
+    digitalWrite(GREEN_LED, HIGH);
+    digitalWrite(RED_LED, HIGH); 
+    delay(2000);
   #endif
   #ifdef USELCD
     ClearScreen();
     lcdSerial.write("Please scan card");
   #endif
+  Stop = true;
 }
 
 
 void loop()
 {
+  CountDownTimer(); // run the timer
+  if (TimeHasChanged()) 
+  { 
+    #ifdef DEBUG
+      Serial.print(ShowHours());
+      Serial.print(":");
+      Serial.print(ShowMinutes());
+      Serial.print(":");
+      Serial.print(ShowSeconds());
+      Serial.print(":");
+      Serial.print(ShowMilliSeconds());
+      Serial.print(":");
+      Serial.println(ShowMicroSeconds());
+    #endif
+    
+    // This DOES NOT format the time to 0:0x when seconds is less than 10.
+    // if you need to format the time to standard format, use the sprintf() function.
+    if(Stop == true)
+    {
+      #ifdef DEBUG
+        Serial.println("Stop reached");
+      #endif
+      #ifdef USELED
+     
+      #endif 
+       digitalWrite(RELAY1,HIGH);
+    }
+  }
+   
       int gotCard = 0;
       String serial;
       String pin ="";
@@ -274,6 +309,21 @@ void loop()
       
                 // Stop and disable RFID
           mfrc522.PICC_HaltA();
+          #ifdef DEBUG
+                 Serial.println("Read Serial:" + serial);
+                 Serial.println("Stored Serial:" + storedSerial);
+          #endif
+               
+          if(serial == storedSerial)
+          {
+              digitalWrite(RELAY1,HIGH);
+              StopTimer();
+              SetTimer(0);
+              storedSerial = "";
+              
+          }
+          else
+          {
           AccessResponse accessResponse;
           
           #ifdef USEWEBAUTHENTICATE
@@ -285,8 +335,14 @@ void loop()
           #endif         
           if(strcmp(accessResponse.AccessAllowed,"true")==0)
           {
+               storedSerial = serial;
+               
+               #ifdef DEBUG
+                 Serial.println("Stored" + storedSerial);
+               #endif
+               
                #ifdef USELED
-                 digitalWrite(GREEN_LED, HIGH);
+                 TurnOnLED(GREEN_LED);
                #endif
                #ifdef USETONE
                   tone(TONEPIN,300,1000);
@@ -306,18 +362,21 @@ void loop()
               
                if(accessResponse.TimeLimit != 0)
                {
+                 
                  #ifdef DEBUG
                    Serial.println(accessResponse.TimeLimit);
                  #endif
                  //Need to add a countdown timer here so that time counts down the time remaining and outputs to the LCD
-                 delay(accessResponse.TimeLimit * 60000);
-                 digitalWrite(RELAY1,HIGH); //Turn off time limit expires.  Need to add the current check and other logic here.  Very basic rightnow.  Delay is not 
+                 //delay(accessResponse.TimeLimit * 60000);
+                 CountDownTimer(); // run the timer
+                 SetTimer(0,0,accessResponse.TimeLimit * 60); // 10 seconds
+                 StartTimer();
                }
                
            }
            else{
                #ifdef USELED
-                  digitalWrite(RED_LED, HIGH);
+                  TurnOnLED(RED_LED);
                #endif
                #ifdef USETONE
                   tone(TONEPIN,100,1000);
@@ -329,17 +388,29 @@ void loop()
                #endif
            }
            delay(2000);
+          }
         }
       }
       #ifdef USELED
-          digitalWrite(RED_LED, LOW);
-          digitalWrite(GREEN_LED, LOW);
-          digitalWrite(YELLOW_LED, HIGH);
+          TurnOnLED(YELLOW_LED);
       #endif
       #ifdef USELCD         
            ClearScreen();
            lcdSerial.write("Please scan card");
       #endif
+}
+
+void TurnOnLED(int LED)
+{
+  TurnOffAllLED();
+  digitalWrite(LED,HIGH);
+  
+}
+void TurnOffAllLED()
+{
+    digitalWrite(RED_LED, LOW);
+    digitalWrite(GREEN_LED, LOW);
+    digitalWrite(YELLOW_LED, LOW);
 }
 
 void ClearScreen()
@@ -377,16 +448,16 @@ AccessResponse CheckAccessUsingService(String serial, String pin)
           {
 	    char c = client.read();
 	    response = response + c;
-            Serial.println(c);
+            //Serial.println(c);
           }
 	}
-	#ifdef DEBUG
-		Serial.println(response);
-	#endif
+//	#ifdef DEBUG
+//		Serial.println(response);
+//	#endif
 
 	StaticJsonBuffer<200> jsonBuffer;
 	char charBuf[response.length() + 1];
-#ifdef DEBUG
+        #ifdef DEBUG
 		Serial.println(response);
 	#endif
 	response.toCharArray(charBuf, response.length() + 1);
@@ -418,3 +489,97 @@ AccessResponse CheckAccessUsingService(String serial, String pin)
 	return accessResponse;
   #endif
 }
+
+
+
+boolean CountDownTimer()
+{
+  static unsigned long duration = 1000000; // 1 second
+  timeFlag = false;
+
+  if (!Stop && !Paused) // if not Stopped or Paused, run timer
+  {
+    // check the time difference and see if 1 second has elapsed
+    if ((_micro = micros()) - time > duration ) 
+    {
+      Clock--;
+      timeFlag = true;
+
+      if (Clock == 0) // check to see if the clock is 0
+        Stop = true; // If so, stop the timer
+
+     // check to see if micros() has rolled over, if not,
+     // then increment "time" by duration
+      _micro < time ? time = _micro : time += duration; 
+    }
+  }
+  return !Stop; // return the state of the timer
+}
+void StartTimer()
+{
+  Watch = micros(); // get the initial microseconds at the start of the timer
+  Stop = false;
+  Paused = false;
+}
+
+void StopTimer()
+{
+  Stop = true;
+}
+
+void SetTimer(unsigned int hours, unsigned int minutes, unsigned int seconds)
+{
+  // This handles invalid time overflow ie 1(H), 0(M), 120(S) -> 1, 2, 0
+  unsigned int _S = (seconds / 60), _M = (minutes / 60);
+  if(_S) minutes += _S;
+  if(_M) hours += _M;
+
+  Clock = (hours * 3600) + (minutes * 60) + (seconds % 60);
+  R_clock = Clock;
+  Stop = false;
+}
+
+void SetTimer(unsigned int seconds)
+{
+ // StartTimer(seconds / 3600, (seconds / 3600) / 60, seconds % 60);
+ Clock = seconds;
+ R_clock = Clock;
+ Stop = false;
+}
+int ShowHours()
+{
+  return Clock / 3600;
+}
+
+int ShowMinutes()
+{
+  return (Clock / 60) % 60;
+}
+
+int ShowSeconds()
+{
+  return Clock % 60;
+}
+
+unsigned long ShowMilliSeconds()
+{
+  return (_micro - Watch)/ 1000.0;
+}
+
+unsigned long ShowMicroSeconds()
+{
+  return _micro - Watch;
+}
+
+boolean TimeHasChanged()
+{
+  return timeFlag;
+}
+
+// output true if timer equals requested time
+boolean TimeCheck(unsigned int hours, unsigned int minutes, unsigned int seconds) 
+{
+  return (hours == ShowHours() && minutes == ShowMinutes() && seconds == ShowSeconds());
+}
+
+
