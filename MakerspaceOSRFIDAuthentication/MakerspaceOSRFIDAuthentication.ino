@@ -119,7 +119,7 @@ void setup()
 {
   
   pinMode(RELAY1, OUTPUT); 
-  digitalWrite(RELAY1,HIGH);
+  digitalWrite(RELAY1,LOW);
   
   #ifdef DEBUG  //Only setup serial if in debug
     Serial.begin(9600);
@@ -248,7 +248,7 @@ void loop()
       #ifdef USELED
      
       #endif 
-       digitalWrite(RELAY1,HIGH);
+       digitalWrite(RELAY1,LOW);
     }
   }
    
@@ -316,7 +316,7 @@ void loop()
                
           if(serial == storedSerial)
           {
-              digitalWrite(RELAY1,HIGH);
+              digitalWrite(RELAY1,LOW);
               StopTimer();
               SetTimer(0);
               storedSerial = "";
@@ -358,7 +358,7 @@ void loop()
                #endif
                
                
-               digitalWrite(RELAY1,LOW);
+               digitalWrite(RELAY1,HIGH);
               
                if(accessResponse.TimeLimit != 0)
                {
